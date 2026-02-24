@@ -1,0 +1,132 @@
+import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
+
+st.set_page_config(layout="wide")
+st.title("✈ Boeing 777-300 Performance Simulator")
+
+# ==========================================
+# AIRCRAFT DATA (AUTO-LOADED)
+# ==========================================
+
+MTOW = 299000          # kg
+S = 427                # m^2
+CD0 = 0.018
+K = 0.045
+CLmax = 1.6
+thrust_sl = 800000     # N (total)
+TSFC_hr = 0.6          # 1/hr
+g = 9.81
+
+# ==========================================
+# USER INPUTS (Operational Only)
+# ==========================================
+
+mass = st.sidebar.slider("Current Aircraft Mass (kg)", 180000, MTOW, MTOW)
+cruise_alt_ft = st.sidebar.slider("Cruise Altitude (ft)", 30000, 43000, 35000)
+Mach = st.sidebar.slider("Cruise Mach", 0.80, 0.86, 0.84)
+fuel_fraction = st.sidebar.slider("Fuel Burn Fraction (Wi/Wf)", 1.1, 1.8, 1.5)
+
+Wi = mass
+Wf = mass / fuel_fraction
+
+# ==========================================
+# ISA ATMOSPHERE
+# ==========================================
+
+def isa(h):
+    T0=288.15; P0=101325; L=-0.0065; R=287; g=9.81
+    if h<=11000:
+        T=T0+L*h; P=P0*(T/T0)**(-g/(L*R))
+    else:
+        T=216.65; P=22632*np.exp(-g*(h-11000)/(R*T))
+    rho=P/(R*T); a=np.sqrt(1.4*R*T)
+    return rho,a
+
+rho,a = isa(cruise_alt_ft*0.3048)
+V = Mach*a
+W = mass*g
+
+# ==========================================
+# AERODYNAMICS
+# ==========================================
+
+q = 0.5*rho*V**2
+CL = W/(q*S)
+CD = CD0 + K*CL**2
+D = q*S*CD
+
+LD = CL/CD
+
+# ==========================================
+# THRUST AVAILABLE (Jet Lapse Model)
+# ==========================================
+
+sigma = rho/1.225
+T_available = thrust_sl*(sigma**0.8)*(1-0.25*Mach)
+
+# ==========================================
+# RATE OF CLIMB
+# ==========================================
+
+ROC = (T_available - D)*V/W
+
+# ==========================================
+# TAKEOFF DISTANCE
+# ==========================================
+
+rho0,_ = isa(0)
+W0 = mass*g
+V2 = np.sqrt(2*W0/(rho0*S*CLmax))
+S_to = (W0**2)/(g*rho0*S*CLmax*thrust_sl)
+
+# ==========================================
+# LANDING DISTANCE
+# ==========================================
+
+S_land = 1.69*(W0**2)/(g*rho0*S*CLmax)
+
+# ==========================================
+# BREGUET RANGE (CORRECT)
+# ==========================================
+
+TSFC_sec = TSFC_hr / 3600   # convert to 1/sec
+
+Range = (V/TSFC_sec) * LD * np.log(Wi/Wf)
+Range_km = Range/1000
+
+# ==========================================
+# OUTPUT
+# ==========================================
+
+st.subheader("Performance Summary at Cruise")
+
+col1,col2,col3 = st.columns(3)
+
+col1.metric("Cruise Speed (kt)", round(V/0.514,0))
+col1.metric("Lift-to-Drag Ratio", round(LD,1))
+col1.metric("Thrust Required (kN)", round(D/1000,1))
+
+col2.metric("Thrust Available (kN)", round(T_available/1000,1))
+col2.metric("Rate of Climb (ft/min)", round(ROC*196.85,0))
+col2.metric("Estimated Range (km)", round(Range_km,0))
+
+col3.metric("Takeoff Distance (m)", round(S_to,0))
+col3.metric("Landing Distance (m)", round(S_land,0))
+col3.metric("V2 (kt)", round(V2/0.514,1))
+
+# ==========================================
+# DRAG POLAR PLOT
+# ==========================================
+
+st.subheader("Drag Polar")
+
+CL_vals = np.linspace(0.2,1.5,100)
+CD_vals = CD0 + K*CL_vals**2
+
+fig,ax = plt.subplots()
+ax.plot(CL_vals,CD_vals)
+ax.set_xlabel("CL")
+ax.set_ylabel("CD")
+ax.grid()
+st.pyplot(fig)
