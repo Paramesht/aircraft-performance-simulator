@@ -251,4 +251,5 @@ fig_engine = go.Figure(go.Indicator(
         ]
     }
 ))
+
 st.plotly_chart(fig_engine, use_container_width=True)
